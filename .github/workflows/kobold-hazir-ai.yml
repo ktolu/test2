@@ -11,111 +11,70 @@ jobs:
         id: kobold
         shell: pwsh
         run: |
-          Write-Host ">>> KoboldCpp son surum bilgisi cekiliyor..."
           $ProgressPreference = 'SilentlyContinue'
           $release = Invoke-RestMethod -Uri "https://api.github.com/repos/LostRuins/koboldcpp/releases/latest"
-          
-          # Once tam olarak koboldcpp.exe ara
           $asset = $release.assets | Where-Object { $_.name -eq "koboldcpp.exe" } | Select-Object -First 1
-          
-          # Bulunamazsa koboldcpp ile baslayan herhangi bir .exe'yi dene
           if (-not $asset) {
             $asset = $release.assets | Where-Object { $_.name -match "^koboldcpp[^/\$$*\.exe$" } | Select-Object -First 1
           }
-          
           if (-not $asset) {
             Write-Error "koboldcpp.exe bulunamadi! Mevcut asset'ler:"
-            $release.assets | ForEach-Object { Write-Host " - $($_.name)" }
+            $release.assets | ForEach-Object { Write-Host "  $($_.name)" }
             exit 1
           }
-          
-          Write-Host ">>> Bulunan dosya: $($asset.name)"
-          Write-Host ">>> Indiriliyor..."
-          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "koboldcpp.exe" -MaximumRedirection 5
-          
+          Write-Host "Bulunan dosya: $($asset.name) -> Indiriliyor..."
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "koboldcpp.exe"
+
       - name: Minik AI modelini indir (TinyLlama 1.1B Chat ~640 MB)
         shell: pwsh
         run: |
           $ProgressPreference = 'SilentlyContinue'
           $url = "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
-          Write-Host ">>> Model indiriliyor: $url"
-          Invoke-WebRequest -Uri $url -OutFile "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf" -MaximumRedirection 5
-          
+          Invoke-WebRequest -Uri $url -OutFile "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
           $size = (Get-Item "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf").Length
-          Write-Host ">>> Inen dosya boyutu: $([math]::Round($size/1MB,2)) MB"
+          Write-Host "Inen dosya boyutu: $([math]::Round($size/1MB,2)) MB"
           if ($size -lt 10MB) { throw "Model dosyasi cok kucuk, indirme hatasi olabilir!" }
-          
-      - name: Paket klasorunu ve BAT dosyalarini hazirla
+
+      - name: Paket klasorunu ve BASLAT.bat hazirla
         shell: pwsh
         run: |
-          $pkg = "KoboldCpp-Hazir-AI"
-          New-Item -ItemType Directory -Force -Path $pkg | Out-Null
-          
-          # Dosyalari tasiyalim
-          Copy-Item "koboldcpp.exe" "$pkg\"
-          Copy-Item "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf" "$pkg\"
-          
-          # --- BASLAT.bat ---
-          $bat = @'
-@echo off
-chcp 65001 >nul
-cls
-echo ========================================
-echo    KOBOLDCPP - HAZIR LOCAL AI PAKETI
-echo ========================================
-echo.
-echo Model: TinyLlama 1.1B Chat (Q4_K_M)
-echo Bellek yukleniyor, lutfen bekleyin...
-echo.
-start "" koboldcpp.exe --model tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf --port 5001 --launch
-echo.
-echo ----------------------------------------
-echo Tarayiciniz otomatik acilmazsa:
-echo http://localhost:5001
-echo.
-echo KAPATMAK icin KoboldCpp penceresini X'leyin.
-echo ========================================
-pause
-'@
-          Set-Content -Path "$pkg\BASLAT.bat" -Value $bat -Encoding ASCII
-          
-          # --- NASIL KULLANILIR.txt ---
-          $txt = @'
-KOBOLDCPP HAZIR LOCAL AI PAKETI
-=================================
-1. BASLAT.bat'a cift tikla.
-2. Siyah pencere acilsin, "bellek yukleniyor" yazsin - bekleyin (~20 sn).
-3. Varsayilan olarak tarayici otomatik acilir (http://localhost:5001).
-4. Acilmazsa elle o adrese git.
-5. Ekrandaki kutuya istedigini sor (Turkce veya Ingilizce yazabilirsin).
+          New-Item -ItemType Directory -Force -Path "KoboldCpp-Hazir-AI" | Out-Null
+          Copy-Item "koboldcpp.exe" "KoboldCpp-Hazir-AI\"
+          Copy-Item "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf" "KoboldCpp-Hazir-AI\"
+          $bat = @(
+            '@echo off',
+            'chcp 65001 >nul',
+            'cls',
+            'echo ========================================',
+            'echo    KOBOLDCPP - HAZIR LOCAL AI PAKETI',
+            'echo ========================================',
+            'echo.',
+            'echo Model: TinyLlama 1.1B Chat (Q4_K_M)',
+            'echo Bellek yukleniyor, lutfen bekleyin...',
+            'echo.',
+            'start "" koboldcpp.exe --model tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf --port 5001 --launch',
+            'echo.',
+            'echo ----------------------------------------',
+            'echo Tarayiciniz otomatik acilmazsa:',
+            'echo http://localhost:5001',
+            'echo.',
+            'echo Kapatmak icin bu pencereyi Xleyin.',
+            'echo ========================================',
+            'pause'
+          )
+          Set-Content -Path "KoboldCpp-Hazir-AI\BASLAT.bat" -Value $bat -Encoding ASCII
 
-ONEMLI NOTLAR:
-- Bu paket INTERNETSIZ calisir, hic veri disari gitmez.
-- Windows Defender "Bilinmeyen yayinci" derse:
-  "Daha fazla" -> "Yine de calistir" sec.
-- KAPATMAK: Sadece tarayici sekmesini ve siyah komut penceresini kapat.
-- Model: TinyLlama 1.1B Chat v1.0 (Q4_K_M) ~640 MB
-- RAM: En az 2-3 GB bos RAM onerilir.
-- Disk: ZIP acildiktan sonra ~900 MB yer kaplar.
-
-TROUBLESHOOTING:
-- Ekranda "NoAVX" hatasi alirsan:
-  Bu calisma kitligine sahip cok eski bir islemci olabilir.
-  Alternatif olarak daha eski bir KoboldCpp surumu dene.
-'@
-          Set-Content -Path "$pkg\NASIL_KULLANILIR.txt" -Value $txt -Encoding UTF8
-          
       - name: ZIP'e koy
         shell: pwsh
         run: |
           $ProgressPreference = 'SilentlyContinue'
-          Compress-Archive -Path "KoboldCpp-Hazir-AI\*" -DestinationPath "KoboldCpp-Hazir-AI-Paketi.zip"
-          $zipSize = (Get-Item "KoboldCpp-Hazir-AI-Paketi.zip").Length
-          Write-Host ">>> ZIP hazir! Boyut: $([math]::Round($zipSize/1MB,2)) MB"
-          
-      - name: Artifact olarak yukle (v4)
+          Compress-Archive -Path "KoboldCpp-Hazir-AI\*" -DestinationPath "Koldcpp-Hazir-AI-Paketi.zip"
+          $sz = (Get-Item "Koldcpp-Hazir-AI-Paketi.zip").Length
+          Write-Host "ZIP hazir! Boyut: $([math]::Round($sz/1MB,2)) MB"
+
+      - name: Artifact olarak yukle v4
         uses: actions/upload-artifact@v4
         with:
           name: KoboldCpp-Hazir-AI-Paketi
-          path: KoboldCpp-Hazir-AI-Paketi.zip
+          path: Koldcpp-Hazir-AI-Paketi.zip
           retention-days: 2
