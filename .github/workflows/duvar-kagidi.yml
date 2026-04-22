@@ -1,0 +1,47 @@
+name: Canli Duvar Kagidi EXE Indir
+
+on:
+  workflow_dispatch:
+
+jobs:
+  indir-ve-paketle:
+    runs-on: windows-latest
+    steps:
+      - name: Lively Wallpaper son surumunu bul ve indir
+        shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          
+          # rocksdanister/lively son surumunu cek
+          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/rocksdanister/lively/releases/latest"
+          
+          # .exe installer'i bul (genelde setup exe'dir)
+          $asset = $release.assets | Where-Object { 
+            $_.name -like "*x86_64*.exe" -or $_.name -like "*setup*.exe" -or $_.name -like "*installer*.exe" 
+          } | Select-Object -First 1
+
+          if (-not $asset) {
+            $asset = $release.assets | Where-Object { $_.name.EndsWith(".exe") } | Select-Object -First 1
+          }
+
+          if (-not $asset) {
+            Write-Error "EXE dosyasi bulunamadi! Mevcut dosyalar:"
+            $release.assets | ForEach-Object { Write-Host "  $($_.name)" }
+            exit 1
+          }
+
+          Write-Host "Bulunan: $($asset.name)"
+          Write-Host "Indiriliyor..."
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $asset.name
+
+          # Klasor olustur ve ZIP yap
+          New-Item -ItemType Directory -Force -Path "Canli-Duvar-Kagidi" | Out-Null
+          Copy-Item $asset.name -Destination "Canli-Duvar-Kagidi\Lively-Setup.exe"
+          Compress-Archive -Path "Canli-Duvar-Kagidi\*" -DestinationPath "Canli-Duvar-Kagidi.zip"
+
+      - name: Artifact olarak yukle
+        uses: actions/upload-artifact@v4
+        with:
+          name: Canli-Duvar-Kagidi-Setup
+          path: Canli-Duvar-Kagidi.zip
+          retention-days: 2
