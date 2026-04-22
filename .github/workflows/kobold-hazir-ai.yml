@@ -1,4 +1,4 @@
-name: KoboldCpp Hazir Local AI Paketi
+name: KoboldCpp Hazir Local AI (EXE Launcher)
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ jobs:
   build-paket:
     runs-on: windows-latest
     steps:
-      - name: KoboldCpp son surumunu GitHub API ile bul ve indir
+      - name: KoboldCpp son surumunu bul ve indir
         id: kobold
         shell: pwsh
         run: |
@@ -18,63 +18,79 @@ jobs:
             $asset = $release.assets | Where-Object { $_.name -match "^koboldcpp[^/\$$*\.exe$" } | Select-Object -First 1
           }
           if (-not $asset) {
-            Write-Error "koboldcpp.exe bulunamadi! Mevcut asset'ler:"
+            Write-Error "koboldcpp.exe bulunamadi! Mevcut dosyalar:"
             $release.assets | ForEach-Object { Write-Host "  $($_.name)" }
             exit 1
           }
-          Write-Host "Bulunan dosya: $($asset.name) -> Indiriliyor..."
+          Write-Host "Bulunan: $($asset.name) -> Indiriliyor..."
           Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "koboldcpp.exe"
 
-      - name: Minik AI modelini indir (TinyLlama 1.1B Chat ~640 MB)
+      - name: Minik AI modelini indir (TinyLlama ~640 MB)
         shell: pwsh
         run: |
           $ProgressPreference = 'SilentlyContinue'
           $url = "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
           Invoke-WebRequest -Uri $url -OutFile "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
           $size = (Get-Item "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf").Length
-          Write-Host "Inen dosya boyutu: $([math]::Round($size/1MB,2)) MB"
-          if ($size -lt 10MB) { throw "Model dosyasi cok kucuk, indirme hatasi olabilir!" }
+          Write-Host "Model indirildi: $([math]::Round($size/1MB,2)) MB"
 
-      - name: Paket klasorunu ve BASLAT.bat hazirla
+      - name: Launcher Python script i (EXE olacak)
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path "KoboldCpp-Hazir-AI" | Out-Null
-          Copy-Item "koboldcpp.exe" "KoboldCpp-Hazir-AI\"
-          Copy-Item "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf" "KoboldCpp-Hazir-AI\"
-          $bat = @(
-            '@echo off',
-            'chcp 65001 >nul',
-            'cls',
-            'echo ========================================',
-            'echo    KOBOLDCPP - HAZIR LOCAL AI PAKETI',
-            'echo ========================================',
-            'echo.',
-            'echo Model: TinyLlama 1.1B Chat (Q4_K_M)',
-            'echo Bellek yukleniyor, lutfen bekleyin...',
-            'echo.',
-            'start "" koboldcpp.exe --model tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf --port 5001 --launch',
-            'echo.',
-            'echo ----------------------------------------',
-            'echo Tarayiciniz otomatik acilmazsa:',
-            'echo http://localhost:5001',
-            'echo.',
-            'echo Kapatmak icin bu pencereyi Xleyin.',
-            'echo ========================================',
-            'pause'
+          $lines = @(
+            'import os, sys, subprocess, glob',
+            '',
+            'def main():',
+            '    # EXE neredeyse o klasor',
+            '    if getattr(sys, "frozen", False):',
+            '        base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))',
+            '    else:',
+            '        base_dir = os.path.dirname(os.path.abspath(__file__))',
+            '',
+            '    exe = os.path.join(base_dir, "koboldcpp.exe")',
+            '    if not os.path.exists(exe):',
+            '        print("HATA: koboldcpp.exe bulunamadi!")',
+            '        input("Kapatmak icin Enter a basin...")',
+            '        sys.exit(1)',
+            '',
+            '    models = glob.glob(os.path.join(base_dir, "*.gguf"))',
+            '    if not models:',
+            '        print("HATA: .gguf model dosyasi bulunamadi!")',
+            '        input("Kapatmak icin Enter a basin...")',
+            '        sys.exit(1)',
+            '',
+            '    model = os.path.basename(models[0])',
+            '    print("KoboldCpp baslatiliyor...")',
+            '    print("Model:", model)',
+            '    subprocess.Popen([exe, "--model", model, "--port", "5001", "--launch"], cwd=base_dir)',
+            '    print("")',
+            '    print("Tarayici acilmazsa: http://localhost:5001")',
+            '    print("")',
+            '    input("Kapatmak icin Enter a basin...")',
+            '',
+            'if __name__ == "__main__":',
+            '    main()'
           )
-          Set-Content -Path "KoboldCpp-Hazir-AI\BASLAT.bat" -Value $bat -Encoding ASCII
+          $lines | Set-Content -Path "launcher.py" -Encoding UTF8
 
-      - name: ZIP'e koy
+      - name: PyInstaller ile BASLAT.exe derle
         shell: pwsh
         run: |
-          $ProgressPreference = 'SilentlyContinue'
-          Compress-Archive -Path "KoboldCpp-Hazir-AI\*" -DestinationPath "Koldcpp-Hazir-AI-Paketi.zip"
-          $sz = (Get-Item "Koldcpp-Hazir-AI-Paketi.zip").Length
-          Write-Host "ZIP hazir! Boyut: $([math]::Round($sz/1MB,2)) MB"
+          python -m pip install pyinstaller
+          python -m PyInstaller --onefile --name "BASLAT" launcher.py
+
+      - name: Paketle ve zip le
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "Paket" | Out-Null
+          Copy-Item "dist\BASLAT.exe" "Paket\"
+          Copy-Item "koboldcpp.exe" "Paket\"
+          Copy-Item "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf" "Paket\"
+          Compress-Archive -Path "Paket\*" -DestinationPath "KoboldCpp-AI-Hazir.zip"
 
       - name: Artifact olarak yukle v4
         uses: actions/upload-artifact@v4
         with:
-          name: KoboldCpp-Hazir-AI-Paketi
-          path: Koldcpp-Hazir-AI-Paketi.zip
-          retention-days: 2
+          name: KoboldCpp-Hazir-AI-Exe
+          path: KoboldCpp-AI-Hazir.zip
+          retention-days: 3
