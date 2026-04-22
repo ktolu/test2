@@ -25,84 +25,104 @@ jobs:
           Write-Host "Bulunan: $($asset.name) -> Indiriliyor..."
           Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "koboldcpp.exe"
 
-      - name: Qwen 2.5 7B modelini indir (~4.7 GB)
+      - name: Qwen 2.5 7B modelini indir (resmi HF, sifresiz)
         shell: pwsh
         run: |
           $ProgressPreference = 'SilentlyContinue'
-          # 16 GB RAM icin ideal: Qwen 2.5 7B Instruct Q4_K_M
-          $url = "https://huggingface.co/TheBloke/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct.q4_k_m.gguf"
-          Write-Host ">>> Model indiriliyor, bu islem 5-10 dakika surebilir..."
-          Invoke-WebRequest -Uri $url -OutFile "qwen2.5-7b-instruct.q4_k_m.gguf"
           
-          $size = (Get-Item "qwen2.5-7b-instruct.q4_k_m.gguf").Length
-          Write-Host ">>> Indirilen boyut: $([math]::Round($size/1MB,2)) MB"
-          if ($size -lt 3000MB) { throw "Model dosyasi tam inmemis olabilir! (Boyut: $size)" }
+          # 16 GB RAM icin ideal: Qwen 2.5 7B Instruct Q4_K_M (~4.7 GB)
+          $url = "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q4_k_m.gguf"
+          
+          # Daha hizli ve guvenilir indirme icin curl.exe (Windows'ta var)
+          Write-Host "Model indiriliyor (~4.7 GB), bu islem 10-15 dakika surebilir..."
+          curl.exe -L --fail --retry 3 -o "model.gguf" $url
+          
+          if ($LASTEXITCODE -ne 0) {
+            # Hata olursa alternatif deneyebiliriz (3B versiyon)
+            Write-Warning "7B indirilemedi, 3B versiyon deneniyor..."
+            $url = "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf"
+            curl.exe -L --fail --retry 3 -o "model.gguf" $url
+            if ($LASTEXITCODE -ne 0) { throw "Model indirilemedi! (Exit: $LASTEXITCODE)" }
+          }
+          
+          $size = (Get-Item "model.gguf").Length
+          $mb = [math]::Round($size/1MB,2)
+          Write-Host "Indirilen boyut: $mb MB"
+          if ($mb -lt 500) { throw "Model dosyasi tam inmemis gibi gorunuyor! ($mb MB)" }
 
-      - name: Paket klasorunu ve BASLAT.bat hazirla
+      - name: Paket klasorunu ve akilli BASLAT.bat hazirla
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path "KoboldCpp-Qwen-AI" | Out-Null
           Copy-Item "koboldcpp.exe" "KoboldCpp-Qwen-AI\"
-          Copy-Item "qwen2.5-7b-instruct.q4_k_m.gguf" "KoboldCpp-Qwen-AI\"
+          Copy-Item "model.gguf" "KoboldCpp-Qwen-AI\"
           
+          # Otomatik .gguf bulan akilli BAT
           $bat = @(
             '@echo off',
             'chcp 65001 >nul',
             'cls',
             'echo ========================================',
-            'echo    KOBOLDCPP + QWEN 2.5 7B LOCAL AI',
+            'echo    KOBOLDCPP HAZIR LOCAL AI',
             'echo ========================================',
             'echo.',
-            'echo Model: Qwen 2.5 7B Instruct (Q4_K_M)',
-            'echo Bellek yukleniyor, lutfen bekleyin...',
-            'echo (Ilk acilista 30-60 saniye surulebilir)',
+            'setlocal enabledelayedexpansion',
+            'set "MODEL="',
+            'for %%f in (*.gguf) do (',
+            '  set "MODEL=%%f"',
+            '  goto :found',
+            ')',
+            'echo HATA: .gguf model dosyasi bulunamadi!',
+            'pause',
+            'exit /b 1',
+            ':found',
+            'echo Yuklenen model: !MODEL!',
+            'echo Bellek yukleniyor, lutfen bekleyin... ~30-60 saniye',
             'echo.',
-            'start "" koboldcpp.exe --model qwen2.5-7b-instruct.q4_k_m.gguf --port 5001 --launch',
+            'start "" koboldcpp.exe --model "!MODEL!" --port 5001 --launch',
             'echo.',
             'echo ----------------------------------------',
-            'echo Tarayiciniz otomatik acilmazsa:',
+            'echo Tarayici otomatik acilmazsa:',
             'echo http://localhost:5001',
             'echo.',
-            'echo Turkce sorular sorabilirsiniz!',
+            'echo Kapatmak icin bu pencereyi kapatmaniz yeterli.',
             'echo ========================================',
             'pause'
           )
           Set-Content -Path "KoboldCpp-Qwen-AI\BASLAT.bat" -Value $bat -Encoding ASCII
           
-          $readme = @(
+          # README
+          $txt = @(
             'KOBOLDCPP + QWEN 2.5 PAKETI',
             '===========================',
-            'Nasil Kullanilir:',
+            'Kullanim:',
             '1. BASLAT.bat a cift tikla.',
-            '2. Siyah pencere acilsin, bekleyin (RAM e yukleniyor).',
-            '3. Tarayici otomatik acilir.',
-            '4. Kobold arayuzundeki kutuya Turkce veya Ingilizce yaz.',
+            '2. Siyah pencerede model bellege yuklenir, bekleyin.',
+            '3. Tarayici otomatik acilir (http://localhost:5001).',
+            '4. Arayuzdeki bos kutuya Turkce veya Ingilizce yaz.',
             '',
-            'Qwen 2.5 Hakkinda:',
-            '- 7 milyar parametre',
-            '- Cok iyi Turkce anlar ve yazilar.',
-            '- Bilgisayarinda calisir, hic veri disari gitmez.',
+            'Model Degistirme:',
+            '- Bu klasore baska bir .gguf model at, BASLAT otomatik bulur.',
+            '- Eski .gguf u sil, sadece 1 adet kalsin.',
             '',
-            'Sistem Gereksinimi:',
-            '- RAM: En az 6-7 GB bos bellek (16 GB varsa rahat calisir).',
-            '- Disk: ~5.5 GB bos alan.',
-            '- Isletim Sistemi: Windows 10/11 64-bit',
+            'Notlar:',
+            '- Tum islem yerel bilgisayarinda calisir.',
+            '- Hic veri internete gitmez (bir kez indirdikten sonra).',
             '',
-            'Sorun Giderme:',
-            '- Eger "AVX" hatasi alirsan daha eski KoboldCpp dene.',
-            '- Tarayici acilmazsa elle http://localhost:5001 yaz.'
+            'If model fails to load with "AVX" error:',
+            'Use an older KoboldCpp version for older CPUs.'
           )
-          Set-Content -Path "KoboldCpp-Qwen-AI\README.txt" -Value $readme -Encoding UTF8
+          Set-Content -Path "KoboldCpp-Qwen-AI\README.txt" -Value $txt -Encoding UTF8
 
       - name: ZIP e koy
         shell: pwsh
         run: |
           $ProgressPreference = 'SilentlyContinue'
-          Compress-Archive -Path "KoboldCpp-Qwen-AI\*" -DestinationPath "Qwen-7B-Hazir-Paket.zip"
+          Compress-Archive -Path "KoboldCpp-Qwen-AI\*" -DestinationPath "Qwen-Hazir-Paket.zip"
 
       - name: Artifact olarak yukle v4
         uses: actions/upload-artifact@v4
         with:
-          name: Qwen-7B-Hazir-Paket
-          path: Qwen-7B-Hazir-Paket.zip
+          name: Qwen-Hazir-Paket
+          path: Qwen-Hazir-Paket.zip
           retention-days: 2
