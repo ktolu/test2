@@ -1,4 +1,4 @@
-name: KoboldCpp Hazir Local AI (EXE Launcher)
+name: KoboldCpp Qwen 2.5 Local AI Paketi
 
 on:
   workflow_dispatch:
@@ -25,72 +25,84 @@ jobs:
           Write-Host "Bulunan: $($asset.name) -> Indiriliyor..."
           Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "koboldcpp.exe"
 
-      - name: Minik AI modelini indir (TinyLlama ~640 MB)
+      - name: Qwen 2.5 7B modelini indir (~4.7 GB)
         shell: pwsh
         run: |
           $ProgressPreference = 'SilentlyContinue'
-          $url = "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
-          Invoke-WebRequest -Uri $url -OutFile "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
-          $size = (Get-Item "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf").Length
-          Write-Host "Model indirildi: $([math]::Round($size/1MB,2)) MB"
+          # 16 GB RAM icin ideal: Qwen 2.5 7B Instruct Q4_K_M
+          $url = "https://huggingface.co/TheBloke/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct.q4_k_m.gguf"
+          Write-Host ">>> Model indiriliyor, bu islem 5-10 dakika surebilir..."
+          Invoke-WebRequest -Uri $url -OutFile "qwen2.5-7b-instruct.q4_k_m.gguf"
+          
+          $size = (Get-Item "qwen2.5-7b-instruct.q4_k_m.gguf").Length
+          Write-Host ">>> Indirilen boyut: $([math]::Round($size/1MB,2)) MB"
+          if ($size -lt 3000MB) { throw "Model dosyasi tam inmemis olabilir! (Boyut: $size)" }
 
-      - name: Launcher Python script i (EXE olacak)
+      - name: Paket klasorunu ve BASLAT.bat hazirla
         shell: pwsh
         run: |
-          $lines = @(
-            'import os, sys, subprocess, glob',
-            '',
-            'def main():',
-            '    # EXE neredeyse o klasor',
-            '    if getattr(sys, "frozen", False):',
-            '        base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))',
-            '    else:',
-            '        base_dir = os.path.dirname(os.path.abspath(__file__))',
-            '',
-            '    exe = os.path.join(base_dir, "koboldcpp.exe")',
-            '    if not os.path.exists(exe):',
-            '        print("HATA: koboldcpp.exe bulunamadi!")',
-            '        input("Kapatmak icin Enter a basin...")',
-            '        sys.exit(1)',
-            '',
-            '    models = glob.glob(os.path.join(base_dir, "*.gguf"))',
-            '    if not models:',
-            '        print("HATA: .gguf model dosyasi bulunamadi!")',
-            '        input("Kapatmak icin Enter a basin...")',
-            '        sys.exit(1)',
-            '',
-            '    model = os.path.basename(models[0])',
-            '    print("KoboldCpp baslatiliyor...")',
-            '    print("Model:", model)',
-            '    subprocess.Popen([exe, "--model", model, "--port", "5001", "--launch"], cwd=base_dir)',
-            '    print("")',
-            '    print("Tarayici acilmazsa: http://localhost:5001")',
-            '    print("")',
-            '    input("Kapatmak icin Enter a basin...")',
-            '',
-            'if __name__ == "__main__":',
-            '    main()'
+          New-Item -ItemType Directory -Force -Path "KoboldCpp-Qwen-AI" | Out-Null
+          Copy-Item "koboldcpp.exe" "KoboldCpp-Qwen-AI\"
+          Copy-Item "qwen2.5-7b-instruct.q4_k_m.gguf" "KoboldCpp-Qwen-AI\"
+          
+          $bat = @(
+            '@echo off',
+            'chcp 65001 >nul',
+            'cls',
+            'echo ========================================',
+            'echo    KOBOLDCPP + QWEN 2.5 7B LOCAL AI',
+            'echo ========================================',
+            'echo.',
+            'echo Model: Qwen 2.5 7B Instruct (Q4_K_M)',
+            'echo Bellek yukleniyor, lutfen bekleyin...',
+            'echo (Ilk acilista 30-60 saniye surulebilir)',
+            'echo.',
+            'start "" koboldcpp.exe --model qwen2.5-7b-instruct.q4_k_m.gguf --port 5001 --launch',
+            'echo.',
+            'echo ----------------------------------------',
+            'echo Tarayiciniz otomatik acilmazsa:',
+            'echo http://localhost:5001',
+            'echo.',
+            'echo Turkce sorular sorabilirsiniz!',
+            'echo ========================================',
+            'pause'
           )
-          $lines | Set-Content -Path "launcher.py" -Encoding UTF8
+          Set-Content -Path "KoboldCpp-Qwen-AI\BASLAT.bat" -Value $bat -Encoding ASCII
+          
+          $readme = @(
+            'KOBOLDCPP + QWEN 2.5 PAKETI',
+            '===========================',
+            'Nasil Kullanilir:',
+            '1. BASLAT.bat a cift tikla.',
+            '2. Siyah pencere acilsin, bekleyin (RAM e yukleniyor).',
+            '3. Tarayici otomatik acilir.',
+            '4. Kobold arayuzundeki kutuya Turkce veya Ingilizce yaz.',
+            '',
+            'Qwen 2.5 Hakkinda:',
+            '- 7 milyar parametre',
+            '- Cok iyi Turkce anlar ve yazilar.',
+            '- Bilgisayarinda calisir, hic veri disari gitmez.',
+            '',
+            'Sistem Gereksinimi:',
+            '- RAM: En az 6-7 GB bos bellek (16 GB varsa rahat calisir).',
+            '- Disk: ~5.5 GB bos alan.',
+            '- Isletim Sistemi: Windows 10/11 64-bit',
+            '',
+            'Sorun Giderme:',
+            '- Eger "AVX" hatasi alirsan daha eski KoboldCpp dene.',
+            '- Tarayici acilmazsa elle http://localhost:5001 yaz.'
+          )
+          Set-Content -Path "KoboldCpp-Qwen-AI\README.txt" -Value $readme -Encoding UTF8
 
-      - name: PyInstaller ile BASLAT.exe derle
+      - name: ZIP e koy
         shell: pwsh
         run: |
-          python -m pip install pyinstaller
-          python -m PyInstaller --onefile --name "BASLAT" launcher.py
-
-      - name: Paketle ve zip le
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path "Paket" | Out-Null
-          Copy-Item "dist\BASLAT.exe" "Paket\"
-          Copy-Item "koboldcpp.exe" "Paket\"
-          Copy-Item "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf" "Paket\"
-          Compress-Archive -Path "Paket\*" -DestinationPath "KoboldCpp-AI-Hazir.zip"
+          $ProgressPreference = 'SilentlyContinue'
+          Compress-Archive -Path "KoboldCpp-Qwen-AI\*" -DestinationPath "Qwen-7B-Hazir-Paket.zip"
 
       - name: Artifact olarak yukle v4
         uses: actions/upload-artifact@v4
         with:
-          name: KoboldCpp-Hazir-AI-Exe
-          path: KoboldCpp-AI-Hazir.zip
-          retention-days: 3
+          name: Qwen-7B-Hazir-Paket
+          path: Qwen-7B-Hazir-Paket.zip
+          retention-days: 2
