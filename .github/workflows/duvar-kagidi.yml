@@ -1,70 +1,44 @@
-name: Lively Taşınabilir ZIP Oluştur
+name: Build Lively Self-Contained Portable
 
 on:
   workflow_dispatch:
 
 jobs:
-  build-portable:
+  build:
     runs-on: windows-latest
     steps:
-      - name: Gerekli Araçları Hazırla
-        shell: pwsh
-        run: |
-          # 7-Zip yükle
-          choco install 7zip -y
+      - name: Kaynak Kodu Al
+        uses: actions/checkout@v4
+        with:
+          repository: rocksdanister/lively
+          submodules: true
 
-      - name: Lively Son Sürümünü İndir
-        shell: pwsh
-        run: |
-          $ProgressPreference = 'SilentlyContinue'
-          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/rocksdanister/lively/releases/latest"
-          $asset = $release.assets | Where-Object { $_.name -like "*setup*.exe" } | Select-Object -First 1
-          if (-not $asset) {
-            Write-Error "setup.exe bulunamadı!"
-            exit 1
-          }
-          Write-Host "İndiriliyor: $($asset.name)"
-          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "LivelySetup.exe"
+      - name: .NET SDK Kur
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
 
-      - name: Dosyaları 7-Zip ile Aç
-        shell: cmd
+      - name: Gerekli Araçları Yükle
         run: |
-          mkdir extract
-          "C:\Program Files\7-Zip\7z.exe" x "LivelySetup.exe" -o"extract"
+          dotnet workload install-windows
 
-      - name: Gerekli Dosyaları Taşınabilir Klasöre Kopyala
-        shell: pwsh
+      - name: Self-Contained EXE Derle
         run: |
-          $neededFiles = @(
-            "lively.exe",
-            "lively.resources.dll",
-            "WebView2Loader.dll",
-            "settings.json"
-          )
-          New-Item -ItemType Directory -Force -Path "Lively-Portable"
-          foreach ($file in $neededFiles) {
-            $src = Get-ChildItem -Path "extract" -Recurse -Name $file -ErrorAction SilentlyContinue
-            if ($src) {
-              Copy-Item "extract\$src" -Destination "Lively-Portable\"
-            } else {
-              Write-Warning "$file bulunamadı."
-            }
-          }
+          cd lively.sln
+          cd ..
+          dotnet publish src\Lively\Lively.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:AssemblyName=LivelyPortable
 
-      - name: config.json veya default ayarları ekleyebiliriz
-        shell: pwsh
+      - name: Build Klasörünü Kontrol Et
         run: |
-          $defaultSettings = '{"language":"en","audioVisualization":true}'
-          Set-Content -Path "Lively-Portable\settings.json" -Value $defaultSettings
+          dir src\Lively\bin\Release\net9.0-windows\win-x64\publish
 
       - name: ZIP Oluştur
-        shell: pwsh
         run: |
-          Compress-Archive -Path "Lively-Portable" -DestinationPath "Lively-Portable.zip"
+          Compress-Archive -Path "src\Lively\bin\Release\net9.0-windows\win-x64\publish\*" -DestinationPath "Lively-Portable.zip"
 
       - name: Artifact Olarak Yükle
         uses: actions/upload-artifact@v4
         with:
-          name: Lively-Portable
+          name: Lively-Portable-EXE
           path: Lively-Portable.zip
           retention-days: 7
