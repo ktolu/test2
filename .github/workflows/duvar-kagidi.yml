@@ -1,30 +1,70 @@
-name: Lively EXE Deneme
+name: Lively Taşınabilir ZIP Oluştur
 
 on:
   workflow_dispatch:
 
 jobs:
-  indir:
+  build-portable:
     runs-on: windows-latest
     steps:
-      - name: EXE Dosyasını İndir ve Paketle
+      - name: Gerekli Araçları Hazırla
+        shell: pwsh
+        run: |
+          # 7-Zip yükle
+          choco install 7zip -y
+
+      - name: Lively Son Sürümünü İndir
         shell: pwsh
         run: |
           $ProgressPreference = 'SilentlyContinue'
           $release = Invoke-RestMethod -Uri "https://api.github.com/repos/rocksdanister/lively/releases/latest"
-          $asset = $release.assets | Where-Object { $_.name.EndsWith(".exe") } | Select-Object -First 1
+          $asset = $release.assets | Where-Object { $_.name -like "*setup*.exe" } | Select-Object -First 1
           if (-not $asset) {
-            Write-Error "EXE bulunamadı."
+            Write-Error "setup.exe bulunamadı!"
             exit 1
           }
           Write-Host "İndiriliyor: $($asset.name)"
-          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $asset.name
-          New-Item -ItemType Directory -Force -Path "Lively"
-          Move-Item $asset.name "Lively\$($asset.name)"
-          Compress-Archive -Path "Lively" -DestinationPath "Lively.zip"
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "LivelySetup.exe"
 
-      - name: Zip'i yükle
+      - name: Dosyaları 7-Zip ile Aç
+        shell: cmd
+        run: |
+          mkdir extract
+          "C:\Program Files\7-Zip\7z.exe" x "LivelySetup.exe" -o"extract"
+
+      - name: Gerekli Dosyaları Taşınabilir Klasöre Kopyala
+        shell: pwsh
+        run: |
+          $neededFiles = @(
+            "lively.exe",
+            "lively.resources.dll",
+            "WebView2Loader.dll",
+            "settings.json"
+          )
+          New-Item -ItemType Directory -Force -Path "Lively-Portable"
+          foreach ($file in $neededFiles) {
+            $src = Get-ChildItem -Path "extract" -Recurse -Name $file -ErrorAction SilentlyContinue
+            if ($src) {
+              Copy-Item "extract\$src" -Destination "Lively-Portable\"
+            } else {
+              Write-Warning "$file bulunamadı."
+            }
+          }
+
+      - name: config.json veya default ayarları ekleyebiliriz
+        shell: pwsh
+        run: |
+          $defaultSettings = '{"language":"en","audioVisualization":true}'
+          Set-Content -Path "Lively-Portable\settings.json" -Value $defaultSettings
+
+      - name: ZIP Oluştur
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "Lively-Portable" -DestinationPath "Lively-Portable.zip"
+
+      - name: Artifact Olarak Yükle
         uses: actions/upload-artifact@v4
         with:
-          name: lively-portable
-          path: Lively.zip
+          name: Lively-Portable
+          path: Lively-Portable.zip
+          retention-days: 7
