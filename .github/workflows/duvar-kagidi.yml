@@ -1,44 +1,19 @@
-name: Build Lively Self-Contained Portable
+name: RainWallpaperFX Portable İndir
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  indir:
     runs-on: windows-latest
     steps:
-      - name: Kaynak Kodu Al
-        uses: actions/checkout@v4
-        with:
-          repository: rocksdanister/lively
-          submodules: true
-
-      - name: .NET SDK Kur
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 9.0.x
-
-      - name: Gerekli Araçları Yükle
+      - name: ZIP Dosyasını İndir
         run: |
-          dotnet workload install-windows
-
-      - name: Self-Contained EXE Derle
-        run: |
-          cd lively.sln
-          cd ..
-          dotnet publish src\Lively\Lively.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:AssemblyName=LivelyPortable
-
-      - name: Build Klasörünü Kontrol Et
-        run: |
-          dir src\Lively\bin\Release\net9.0-windows\win-x64\publish
-
-      - name: ZIP Oluştur
-        run: |
-          Compress-Archive -Path "src\Lively\bin\Release\net9.0-windows\win-x64\publish\*" -DestinationPath "Lively-Portable.zip"
+          Invoke-WebRequest -Uri "https://github.com/rainwallpaper/rainwallpaperfx/releases/latest/download/RainWallpaperFX.Portable.zip" -OutFile "RainWallpaperFX.zip"
 
       - name: Artifact Olarak Yükle
         uses: actions/upload-artifact@v4
         with:
-          name: Lively-Portable-EXE
-          path: Lively-Portable.zip
+          name: RainWallpaperFX-Portable
+          path: RainWallpaperFX.zip
           retention-days: 7
