@@ -1,34 +1,30 @@
-name: Lively Portable Oluştur
+name: Lively EXE Deneme
 
 on:
   workflow_dispatch:
 
 jobs:
-  create-portable:
+  indir:
     runs-on: windows-latest
     steps:
-      - name: Gerekli Dosyaları İndir
+      - name: EXE Dosyasını İndir ve Paketle
         shell: pwsh
         run: |
           $ProgressPreference = 'SilentlyContinue'
           $release = Invoke-RestMethod -Uri "https://api.github.com/repos/rocksdanister/lively/releases/latest"
-          $asset = $release.assets | Where-Object { $_.name -like "*setup*.exe" } | Select-Object -First 1
-          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "LivelySetup.exe"
+          $asset = $release.assets | Where-Object { $_.name.EndsWith(".exe") } | Select-Object -First 1
+          if (-not $asset) {
+            Write-Error "EXE bulunamadı."
+            exit 1
+          }
+          Write-Host "İndiriliyor: $($asset.name)"
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $asset.name
+          New-Item -ItemType Directory -Force -Path "Lively"
+          Move-Item $asset.name "Lively\$($asset.name)"
+          Compress-Archive -Path "Lively" -DestinationPath "Lively.zip"
 
-      - name: Kurulumu Sessiz Modda Çalıştır
-        shell: cmd
-        run: |
-          start /wait LivelySetup.exe /S
-          xcopy "C:\Program Files\Lively" LivelyPortable /E /I /H /Y
-
-      - name: ZIP Oluştur
-        shell: pwsh
-        run: |
-          Compress-Archive -Path "LivelyPortable" -DestinationPath "LivelyPortable.zip"
-
-      - name: Artifact Olarak Yükle
+      - name: Zip'i yükle
         uses: actions/upload-artifact@v4
         with:
-          name: LivelyPortable
-          path: LivelyPortable.zip
-          retention-days: 7
+          name: lively-portable
+          path: Lively.zip
