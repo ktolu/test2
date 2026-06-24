@@ -1,19 +1,25 @@
-name: RainWallpaperFX Portable İndir
+name: Wallpaper Engine Portable İndir
 
 on:
   workflow_dispatch:
 
 jobs:
-  indir:
+  indir-ve-ziple:
     runs-on: windows-latest
     steps:
-      - name: ZIP Dosyasını İndir
+      - name: Repo'dan ZIP İndir
         run: |
-          Invoke-WebRequest -Uri "https://github.com/rainwallpaper/rainwallpaperfx/releases/latest/download/RainWallpaperFX.Portable.zip" -OutFile "RainWallpaperFX.zip"
+          Invoke-WebRequest -Uri "https://github.com/redknightLOL/WallpaperEngine-Portable/archive/refs/heads/main.zip" -OutFile "WallpaperEngine-Portable.zip"
+
+      - name: İçeriği Aç ve Tekrar ZIP'le
+        run: |
+          Expand-Archive -Path "WallpaperEngine-Portable.zip" -DestinationPath ".\extracted"
+          $folder = Get-ChildItem -Path ".\extracted" -Directory | Select-Object -First 1
+          Compress-Archive -Path "$($folder.FullName)\*" -DestinationPath "WallpaperEngine-Portable-Final.zip"
 
       - name: Artifact Olarak Yükle
         uses: actions/upload-artifact@v4
         with:
-          name: RainWallpaperFX-Portable
-          path: RainWallpaperFX.zip
+          name: WallpaperEngine-Portable
+          path: WallpaperEngine-Portable-Final.zip
           retention-days: 7
